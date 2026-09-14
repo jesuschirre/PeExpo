@@ -1,7 +1,6 @@
-import React from 'react';
-import { View, Text, TouchableOpacity } from 'react-native';
-import { Home, MapPin, Package, ListOrdered, LogOut } from 'lucide-react-native';
-import { Role, View as AppViewType } from '../types';
+import { ClipboardList, Home, LogOut, MapPin, Package, Tags } from 'lucide-react-native';
+import { Text, TouchableOpacity, View } from 'react-native';
+import { View as AppViewType, Role } from '../types';
 
 interface BottomNavProps {
   role: Role;
@@ -15,7 +14,7 @@ export function BottomNav({ role, currentView, onViewChange, onLogout }: BottomN
 
   const items = role === 'customer' 
     ? [{ id: 'menu' as AppViewType, label: 'Menu', icon: Home }, { id: 'tracking' as AppViewType, label: 'Tracking', icon: MapPin }]
-    : [{ id: 'admin_products' as AppViewType, label: 'Products', icon: Package }, { id: 'admin_orders' as AppViewType, label: 'Orders', icon: ListOrdered }];
+    : [{ id: 'admin_products' as AppViewType, label: 'Products', icon: Package }, { id: 'admin_categories' as AppViewType, label: 'Categories', icon: Tags }, { id: 'admin_kardex' as AppViewType, label: 'Kardex', icon: ClipboardList }];
 
   return (
     <View className="bg-white border-t border-gray-200 pb-6 pt-2">

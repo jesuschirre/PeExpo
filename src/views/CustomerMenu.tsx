@@ -1,8 +1,9 @@
-import React, { useState, useMemo } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, Image, Modal, TextInput } from 'react-native';
-import { Product, Category, CartItem, Order } from '../types';
-import { CATEGORIES } from '../data';
-import { Plus, Minus, ShoppingBag, X, Send } from 'lucide-react-native';
+import { Minus, Plus, Send, ShoppingBag, X } from 'lucide-react-native';
+import { useEffect, useMemo, useState } from 'react';
+import { Alert, Image, Modal, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { GetCategory } from '../supabase/CrudCategory';
+import { InsertKardex } from '../supabase/CrudKardex';
+import { CartItem, CategoryType, Order, Product } from '../types';
 
 interface CustomerMenuProps {
   products: Product[];
@@ -11,17 +12,30 @@ interface CustomerMenuProps {
 }
 
 export function CustomerMenu({ products, onCreateOrder, hasActiveOrder }: CustomerMenuProps) {
-  const [selectedCategory, setSelectedCategory] = useState<Category>('Burgers');
   const [cart, setCart] = useState<CartItem[]>([]);
   const [isCheckoutModalOpen, setIsCheckoutModalOpen] = useState(false);
   const [customerName, setCustomerName] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [categories, setCategories] = useState<CategoryType[]>([]);
+  const [selectedCategoryId, setSelectedCategoryId] = useState<number | null>(null);
+
+  useEffect(() => {
+    const loadCategories = async () => {
+      const result = await GetCategory();
+      if (!result.error) setCategories((result.data || []).filter(category => category.estado));
+    };
+
+    void loadCategories();
+  }, []);
 
   const filteredProducts = useMemo(
-    () => products.filter((p) => p.category === selectedCategory),
-    [products, selectedCategory]
+    () => selectedCategoryId === null
+      ? products
+      : products.filter(product => product.id_categoria === selectedCategoryId),
+    [products, selectedCategoryId]
   );
 
-  const cartTotal = useMemo(() => cart.reduce((t, i) => t + i.product.price * i.quantity, 0), [cart]);
+  const cartTotal = useMemo(() => cart.reduce((t, i) => t + i.product.precio_venta * i.quantity, 0), [cart]);
   const cartItemCount = useMemo(() => cart.reduce((t, i) => t + i.quantity, 0), [cart]);
 
   const updateQuantity = (product: Product, delta: number) => {
@@ -37,59 +51,82 @@ export function CustomerMenu({ products, onCreateOrder, hasActiveOrder }: Custom
       return prev;
     });
   };
+  const handleCheckout = async () => {
+    const trimmedCustomerName = customerName.trim();
+    if (!trimmedCustomerName || cart.length === 0 || isSubmitting) return;
 
-  const handleCheckout = () => {
-    if (!customerName.trim()) return;
+    setIsSubmitting(true);
+    const kardexMovements = cart.map(item => ({
+      id_producto: item.product.id,
+      cantidad: item.quantity,
+      estado: 'preparando',
+      nombreCli: trimmedCustomerName,
+      total: item.product.precio_venta * item.quantity,
+    }));
+
+    const { error } = await InsertKardex(kardexMovements);
+    if (error) {
+      Alert.alert('No se pudo confirmar la orden', error);
+      setIsSubmitting(false);
+      return;
+    }
+
     onCreateOrder({
       id: Math.random().toString(36).substring(2, 9),
-      customerName,
+      customerName: trimmedCustomerName,
       items: cart,
       total: cartTotal,
-      status: 'pending',
+      status: 'preparing',
       createdAt: Date.now(),
     });
     setCart([]);
     setIsCheckoutModalOpen(false);
     setCustomerName('');
+    setIsSubmitting(false);
   };
 
   return (
     <View className="flex-1 bg-gray-50 pb-24">
       <View className="pt-6 px-6 pb-6 bg-white shadow-sm rounded-b-3xl">
-        <Text className="text-3xl font-bold text-gray-900">Our Menu</Text>
-        <Text className="text-gray-500 mt-1">What are you craving today?</Text>
-      </View>
-
-      <View className="py-6">
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} className="px-6" contentContainerStyle={{ gap: 12, paddingRight: 48 }}>
-          {CATEGORIES.map((cat) => (
-            <TouchableOpacity
-              key={cat}
-              onPress={() => setSelectedCategory(cat)}
-              className={`px-6 py-3 rounded-2xl ${selectedCategory === cat ? 'bg-black' : 'bg-white border border-gray-200'}`}
-            >
-              <Text className={`font-semibold ${selectedCategory === cat ? 'text-white' : 'text-gray-700'}`}>{cat}</Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
+        <Text className="text-3xl font-bold text-gray-900">Nuestro menú</Text>
+        <Text className="text-gray-500 mt-1">Elige tus productos favoritos</Text>
       </View>
 
       <ScrollView className="px-6 flex-1" contentContainerStyle={{ gap: 24, paddingBottom: 100 }}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
+          <TouchableOpacity
+            onPress={() => setSelectedCategoryId(null)}
+            className={`px-4 py-3 rounded-xl ${selectedCategoryId === null ? 'bg-black' : 'bg-white border border-gray-200'}`}
+          >
+            <Text className={selectedCategoryId === null ? 'text-white font-semibold' : 'text-gray-700'}>Todas</Text>
+          </TouchableOpacity>
+          {categories.map(category => (
+            <TouchableOpacity
+              key={category.id}
+              onPress={() => setSelectedCategoryId(category.id)}
+              className={`px-4 py-3 rounded-xl ${selectedCategoryId === category.id ? 'bg-black' : 'bg-white border border-gray-200'}`}
+            >
+              <Text className={selectedCategoryId === category.id ? 'text-white font-semibold' : 'text-gray-700'}>
+                {category.nombre}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+
         {filteredProducts.map((product) => (
           <View key={product.id} className="bg-white rounded-3xl p-4 border border-gray-100 flex-row items-center gap-4">
             <View className="w-24 h-24 rounded-2xl bg-gray-100 overflow-hidden">
-              {product.imageUrl ? (
-                <Image source={{ uri: product.imageUrl }} className="w-full h-full" resizeMode="cover" />
+              {product.img ? (
+                <Image source={{ uri: product.img }} className="w-full h-full" resizeMode="cover" />
               ) : (
                 <View className="flex-1 items-center justify-center"><Text className="text-gray-400">No Image</Text></View>
               )}
             </View>
             
             <View className="flex-1">
-              <Text className="font-bold text-gray-900 text-lg">{product.name}</Text>
-              <Text className="text-gray-500 text-sm mb-2" numberOfLines={1}>{product.description}</Text>
+              <Text className="font-bold text-gray-900 text-lg">{product.nombre}</Text>
               <View className="flex-row items-center justify-between">
-                <Text className="font-bold text-black text-lg">£{product.price.toFixed(2)}</Text>
+                <Text className="font-bold text-black text-lg">£{product.precio_venta.toFixed(2)}</Text>
                 
                 <View className="flex-row items-center gap-3 bg-gray-50 rounded-xl p-1 border border-gray-200">
                   <TouchableOpacity onPress={() => updateQuantity(product, -1)} className="w-8 h-8 items-center justify-center bg-white rounded-lg">
@@ -104,6 +141,11 @@ export function CustomerMenu({ products, onCreateOrder, hasActiveOrder }: Custom
             </View>
           </View>
         ))}
+        {filteredProducts.length === 0 && (
+          <View className="bg-white rounded-2xl p-6 items-center">
+            <Text className="text-gray-500">No hay productos en esta categoría.</Text>
+          </View>
+        )}
       </ScrollView>
 
       {cartItemCount > 0 && (
@@ -118,12 +160,12 @@ export function CustomerMenu({ products, onCreateOrder, hasActiveOrder }: Custom
         </View>
       )}
 
-      {/* Checkout Modal */}
+      {/* Orden Modal */}
       <Modal visible={isCheckoutModalOpen} transparent animationType="slide">
         <View className="flex-1 bg-black/40 justify-end">
           <View className="bg-white rounded-t-3xl p-6 pb-12">
             <View className="flex-row justify-between items-center mb-6">
-              <Text className="text-2xl font-bold">Confirm Order</Text>
+              <Text className="text-2xl font-bold">Confirmar orden</Text>
               <TouchableOpacity onPress={() => setIsCheckoutModalOpen(false)} className="p-2 bg-gray-100 rounded-full">
                 <X color="gray" size={20} />
               </TouchableOpacity>
@@ -132,18 +174,19 @@ export function CustomerMenu({ products, onCreateOrder, hasActiveOrder }: Custom
             <ScrollView className="max-h-60 mb-6" contentContainerStyle={{ gap: 16 }}>
               {cart.map((item) => (
                 <View key={item.product.id} className="flex-row justify-between items-center">
-                  <Text className="text-gray-700"><Text className="font-semibold text-black">{item.quantity}x </Text>{item.product.name}</Text>
-                  <Text className="font-medium text-black">£{(item.product.price * item.quantity).toFixed(2)}</Text>
+                  <Text className="text-gray-700"><Text className="font-semibold text-black">{item.quantity}x </Text>{item.product.nombre}</Text>
+                  <Text className="text-gray-700"><Text className="font-semibold text-black">{item.quantity}x </Text>{item.product.nombre}</Text>
+                  <Text className="font-medium text-black">S/ {(item.product.precio_venta * item.quantity).toFixed(2)}</Text>
                 </View>
               ))}
               <View className="border-t border-gray-200 pt-4 flex-row justify-between items-center">
                 <Text className="font-bold text-lg">Total</Text>
-                <Text className="font-bold text-2xl">£{cartTotal.toFixed(2)}</Text>
+                <Text className="font-bold text-2xl">S/ {cartTotal.toFixed(2)}</Text>
               </View>
             </ScrollView>
 
             <View className="mb-8">
-              <Text className="font-medium text-gray-700 mb-2">Your Name</Text>
+              <Text className="font-medium text-gray-700 mb-2">Tu nombre</Text>
               <TextInput
                 value={customerName}
                 onChangeText={setCustomerName}
@@ -154,10 +197,10 @@ export function CustomerMenu({ products, onCreateOrder, hasActiveOrder }: Custom
 
             <TouchableOpacity 
               onPress={handleCheckout} 
-              disabled={!customerName.trim()}
-              className={`rounded-2xl py-4 flex-row items-center justify-center gap-2 ${customerName.trim() ? 'bg-black' : 'bg-gray-300'}`}
+              disabled={!customerName.trim() || isSubmitting}
+              className={`rounded-2xl py-4 flex-row items-center justify-center gap-2 ${customerName.trim() && !isSubmitting ? 'bg-black' : 'bg-gray-300'}`}
             >
-              <Text className="text-white font-semibold text-lg">Place Order</Text>
+              <Text className="text-white font-semibold text-lg">{isSubmitting ? 'Confirmando...' : 'Realizar pedido'}</Text>
               <Send color="white" size={20} />
             </TouchableOpacity>
           </View>

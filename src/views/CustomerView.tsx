@@ -1,19 +1,18 @@
-import React from 'react';
-import { Product, Order, View as AppViewType } from '../types';
+import { View as AppViewType, Order, Product } from '../types';
 import { CustomerMenu } from './CustomerMenu';
 import { CustomerTracking } from './CustomerTracking';
 
 interface CustomerViewProps {
   view: AppViewType;
   products: Product[];
-  activeOrder: Order | undefined;
+  orders: Order[];
   onCreateOrder: (order: Order) => void;
   onNavigateTracking: () => void;
 }
 
-export function CustomerView({ view, products, activeOrder, onCreateOrder, onNavigateTracking }: CustomerViewProps) {
-  if (view === 'tracking') {
-    return <CustomerTracking order={activeOrder} />;
+export function CustomerView({ view, products, orders, onCreateOrder, onNavigateTracking }: CustomerViewProps) {
+    if (view === 'tracking') {
+      return <CustomerTracking orders={orders} />;
   }
 
   return (
@@ -23,7 +22,7 @@ export function CustomerView({ view, products, activeOrder, onCreateOrder, onNav
         onCreateOrder(order);
         onNavigateTracking();
       }}
-      hasActiveOrder={!!activeOrder && activeOrder.status !== 'delivered'}
+      hasActiveOrder={orders.some(order => !['delivered', 'cancelled'].includes(order.status))}
     />
   );
 }
